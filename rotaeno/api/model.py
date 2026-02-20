@@ -3,6 +3,8 @@ from enum import Enum
 class ServerRegion(Enum):
     CN = "cn"
     GLOBAL = "global"
+    FRIEND_CN = "friend_cn"
+    FRIEND_GLOBAL = "friend_global"
 
 class ServerURL:
     CN = "https://rotaeno.leancloud.indie.xd.com"
@@ -38,3 +40,17 @@ class ServerSecret:
         "key": "0zRcDIygHhqGH3FAinANy0zC",
         'client': "D36LuUfKQMlgPeYWv9"
     }
+
+class FriendAccount:
+    CN = [
+        {
+            "objectID": "your_friend_account_object_id",
+            "sessionToken": "your_friend_account_session_token"
+        }
+    ]
+    GLOBAL = [
+        {
+            "objectID": "your_friend_account_object_id",
+            "sessionToken": "your_friend_account_session_token"
+        }
+    ]

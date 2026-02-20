@@ -8,7 +8,7 @@ from typing import Tuple, Any
 from datetime import datetime
 from datetime import timedelta
 
-def calculate_level(xp) -> float:
+def calculate_level(xp):
     xp_ups = [100, 120, 140, 160, 180, 200, 220, 240, 300, 210]
     xp_ups += [220, 230, 240, 250, 260, 270, 280, 290, 300, 250]
     xp_ups += [260, 270, 280, 290, 300, 310, 320, 330, 340, 350]
@@ -22,6 +22,26 @@ def calculate_level(xp) -> float:
     if xp > 0:
         level += xp / 500
     return level
+
+def calculate_xp(level):
+    xp_ups = [100, 120, 140, 160, 180, 200, 220, 240, 300, 210]
+    xp_ups += [220, 230, 240, 250, 260, 270, 280, 290, 300, 250]
+    xp_ups += [260, 270, 280, 290, 300, 310, 320, 330, 340, 350]
+    xp_ups += [360, 370, 380, 390, 400, 410, 420, 430, 440, 450]
+    xp_ups += [460, 470, 480, 490, 500]
+    if level < 1:
+        return 0
+    full_levels = int(level)
+    extra_fraction = level - full_levels
+    xp = 0
+    for i in range(1, full_levels):
+        if i - 1 < len(xp_ups):
+            xp += xp_ups[i - 1]
+        else:
+            xp += 500
+    if extra_fraction > 0:
+        xp += extra_fraction * 500
+    return int(round(xp))
 
 def calculate_song_rating(song_score, rating_real, song_is_cleared) -> Tuple[float, float]:
     next_rating_point = 0.001
@@ -64,7 +84,6 @@ def calculate_song_rating(song_score, rating_real, song_is_cleared) -> Tuple[flo
     
     return song_rating, next_point_score
 
-
 def save_data_to_file(data: dict, save_path: str) -> None:
     if not save_path.endswith(".msgpack"):
         save_path += ".msgpack"
@@ -97,9 +116,15 @@ class Processor(UserAPI):
         if raw_data:
             cloud_save = raw_data["results"][0]["cloudSave"]
         else:
-            cloud_save = super().get_cloud_save(get_object_id=get_object_id)["results"][0]["cloudSave"]
+            if self.user_profile["serverCode"].startswith("friend_"):
+                followee_data = self.get_followee_data(short_id=self.user_profile["shortID"], raw_data=self.follow_user(short_id=self.user_profile["shortID"]))
+                self.unfollow_user(short_id=self.user_profile["shortID"])
+                raw_data = self.followee_data_to_cloud_save_raw_data_format(followee_data=followee_data)
+            else:
+                raw_data = super().get_cloud_save(get_object_id=get_object_id)
+            cloud_save = raw_data["results"][0]["cloudSave"]
         if save_path is not None:
-            save_data_to_file(cloud_save, save_path)
+            save_data_to_file(raw_data, save_path)
         
         user_data = cloud_save["data"]["data"]
         favorite_song_ids = user_data.get("FavoriteSong", {"songIds": []})["songIds"]
@@ -107,7 +132,10 @@ class Processor(UserAPI):
         display_name = user_data["profile"]["DisplayName"]
         avatar = user_data["badges"]["EquippedBadgeId"] if "boss" not in user_data["badges"]["EquippedBadgeId"] else user_data["badges"]["EquippedBadgeId"] + "-4"
         background = user_data["collectable-background"]["EquippedBackgroundId"].replace("background_", "")
-        character = user_data["collectable-character"]["EquippedCharacterId"].replace("character_", "")
+        character = user_data["collectable-character"]["EquippedCharacterId"].replace("character_", "") if user_data["collectable-character"]["EquippedCharacterId"] is not None else "ilot"
+        if user_data["collectable-character"].get("chars", None) is not None:
+            if user_data["collectable-character"]["chars"].get(character, {"equipForm": None}) is not None:
+                character += f"_{user_data['collectable-character']['chars'][character]['equipForm']}"
         total_play_time = [float(time) for time in cloud_save["TotalPlayTime"].replace("-", "").split(":")]
         total_play_time_delta = timedelta(hours=total_play_time[0], minutes=total_play_time[1], seconds=total_play_time[2])
         total_play_time = format_duration_en(total_play_time_delta)
@@ -133,7 +161,7 @@ class Processor(UserAPI):
         
         song_ratings = {}
         for song_id, song_levels in song_records.items():
-            song_info = song_data_database.song_data.get_song(song_id=song_id)
+            song_info = song_data_database.song_data.get_song(id=song_id)
             song_levels = song_levels.get("levels", {})
             if song_info == {}:
                 print(f"Song ID `{song_id}` not found in song data")
@@ -200,6 +228,8 @@ class Processor(UserAPI):
         
         if add_to_database:
             object_id = self.user_profile.get("objectID", "")
+            if self.user_profile["serverCode"].startswith("friend_"):
+                object_id = f"{self.user_profile['serverCode']}_{self.user_profile['shortID'].lower()}"
             if object_id == "":
                 print("Why the objectID is empty, this data will not be added to the player data")
             else:
@@ -241,9 +271,17 @@ class Processor(UserAPI):
         if raw_data:
             user_data = raw_data
         else:
-            user_data = super().get_user_data()
+            if self.user_profile["serverCode"].startswith("friend_"):
+                followee_data = self.get_followee_data(short_id=self.user_profile["shortID"], raw_data=self.follow_user(short_id=self.user_profile["shortID"]))
+                self.unfollow_user(short_id=self.user_profile["shortID"])
+                raw_data = self.followee_data_to_user_data_raw_data_format(followee_data=followee_data)
+            else:
+                raw_data = super().get_user_data()
+            user_data = raw_data
+        if user_data.get("privateSocialData", None) is None:
+            raise ValueError("privateSocialData not found in user data, cannot process user data")
         if save_path is not None:
-            save_data_to_file(user_data, save_path)
+            save_data_to_file(raw_data, save_path)
         
         i = 0
         ii = 0
@@ -251,12 +289,12 @@ class Processor(UserAPI):
         iv = 0
         iv_alpha = 0
         playStats = {"i": {}, "ii": {}, "iii": {}, "iv": {}, "iv_alpha": {}, "all": {}}
-        for x in user_data["privateSocialData"]["user_data"]["SongRecords"]:
-            i += find_keys_in_any_dict(user_data["privateSocialData"]["user_data"]["SongRecords"][x]["Levels"], ["I", "I"])["Score"]
-            ii += find_keys_in_any_dict(user_data["privateSocialData"]["user_data"]["SongRecords"][x]["Levels"], ["Ii", "II"])["Score"]
-            iii += find_keys_in_any_dict(user_data["privateSocialData"]["user_data"]["SongRecords"][x]["Levels"], ["Iii", "III"])["Score"]
-            iv += find_keys_in_any_dict(user_data["privateSocialData"]["user_data"]["SongRecords"][x]["Levels"], ["Iv", "IV"])["Score"]
-            iv_alpha += find_keys_in_any_dict(user_data["privateSocialData"]["user_data"]["SongRecords"][x]["Levels"], ["IV_Alpha"], default={"Score": 0})["Score"]
+        for x in user_data["privateSocialData"]["UserData"]["SongRecords"]:
+            i += find_keys_in_any_dict(user_data["privateSocialData"]["UserData"]["SongRecords"][x]["Levels"], ["I", "I"])["Score"]
+            ii += find_keys_in_any_dict(user_data["privateSocialData"]["UserData"]["SongRecords"][x]["Levels"], ["Ii", "II"])["Score"]
+            iii += find_keys_in_any_dict(user_data["privateSocialData"]["UserData"]["SongRecords"][x]["Levels"], ["Iii", "III"])["Score"]
+            iv += find_keys_in_any_dict(user_data["privateSocialData"]["UserData"]["SongRecords"][x]["Levels"], ["Iv", "IV"])["Score"]
+            iv_alpha += find_keys_in_any_dict(user_data["privateSocialData"]["UserData"]["SongRecords"][x]["Levels"], ["IV_Alpha"], default={"Score": 0})["Score"]
         playStats["i"]["scores"] = i
         playStats["ii"]["scores"] = ii
         playStats["iii"]["scores"] = iii
@@ -267,24 +305,24 @@ class Processor(UserAPI):
         return {
             "updateAt": user_data["updatedAt"],
             "FriendCap": user_data["privateSocialData"]["FriendCap"],
-            "playerAvatar": user_data["badges"]["EquippedBadgeId"] if "boss" not in user_data["badges"]["EquippedBadgeId"] else user_data["badges"]["EquippedBadgeId"] + "-4",
-            "playerBackground": user_data["privateSocialData"]["user_data"]["BackgroundId"].replace("background_", ""),
-            "playerCharacter": user_data["privateSocialData"]["user_data"]["CharacterId"].replace("character_", ""),
-            "ShowRating": user_data["privateSocialData"]["user_data"]["ShowRating"],
-            "playerExp": user_data["privateSocialData"]["user_data"]["Exp"],
-            "playerLevel": calculate_level(user_data["privateSocialData"]["user_data"]["Exp"]),
-            "playerDisplayName": user_data["privateSocialData"]["user_data"]["DisplayName"],
-            "playerRating": user_data["privateSocialData"]["user_data"]["Rating"],
+            "playerAvatar": user_data["privateSocialData"]["UserData"]["BadgeId"] if "boss" not in user_data["privateSocialData"]["UserData"]["BadgeId"] else user_data["privateSocialData"]["UserData"]["BadgeId"] + "-4",
+            "playerBackground": user_data["privateSocialData"]["UserData"]["BackgroundId"].replace("background_", ""),
+            "playerCharacter": user_data["privateSocialData"]["UserData"]["CharacterId"].replace("character_", "") if user_data["privateSocialData"]["UserData"]["CharacterId"] is not None else "ilot",
+            "ShowRating": user_data["privateSocialData"]["UserData"]["ShowRating"],
+            "playerExp": user_data["privateSocialData"]["UserData"]["Exp"],
+            "playerLevel": calculate_level(user_data["privateSocialData"]["UserData"]["Exp"]),
+            "playerDisplayName": user_data["privateSocialData"]["UserData"]["DisplayName"],
+            "playerRating": user_data["privateSocialData"]["UserData"]["Rating"],
             "createdAt": user_data["createdAt"].split("T")[0],
             "emailVerified": user_data["emailVerified"],
             "mobilePhoneVerified": user_data["mobilePhoneVerified"],
             "playerPlayStats": playStats,
-            "playerFriendCode": user_data["shortId"].upper(),
+            "playerFriendCode": user_data["shortId"].lower(),
             "playerUserID": user_data["authData"]["xdg"]["detail"]["userId"]
         }
     
-    def get_follow_data(self, raw_data: dict = None, save_path: str = None) -> dict:
-        def processingFollowData(user_data):
+    def get_followee_data(self, short_id: str = None, raw_data: dict = None, save_path: str = None) -> dict | list[dict]:
+        def processing_followee_data(user_data):
             i = 0
             ii = 0
             iii = 0
@@ -321,7 +359,7 @@ class Processor(UserAPI):
                 }
                     
             return {
-                "shortID": user_data["shortId"].upper(),
+                "shortID": user_data["shortId"].lower(),
                 "playerRating": user_data["rating"],
                 "playerDisplayName": user_data["displayName"],
                 "playerPlayStats": user_data["playStats"],
@@ -337,19 +375,146 @@ class Processor(UserAPI):
         if raw_data:
             follow_data = raw_data["result"]["socialDatas"]
         else:
-            follow_data = super().get_follow_data()["result"]["socialDatas"]
+            raw_data = super().get_followee_data()
+            follow_data = raw_data["result"]["socialDatas"]
         if save_path is not None:
-            save_data_to_file(follow_data, save_path)
+            save_data_to_file(raw_data, save_path)
+        
+        if short_id is not None:
+            for user_data in follow_data:
+                if user_data["shortId"].lower() == short_id.lower():
+                    return processing_followee_data(user_data)
+            raise ValueError(f"Followee with short ID `{short_id}` not found")
 
-        return [processingFollowData(user_data) for user_data in follow_data]
+        return [processing_followee_data(user_data) for user_data in follow_data]
 
-    def follow_user(self) -> dict:
-        raw_data = {
+    def followee_data_to_cloud_save_raw_data_format(self, short_id: str = None, followee_data: dict = None) -> dict:
+        if followee_data is None:
+            followee_data = self.get_followee_data(short_id=short_id)
+        
+        followee_data_cloud_save_raw_data_format = {
+            "results": [
+                {
+                    "cloudSave": {
+                        "data": {
+                            "data": {
+                                "FavoriteSong": {"songIds": []},
+                                "songs": {
+                                    "songs": {
+                                        song_id: {
+                                            "levels": {
+                                                level_name: {
+                                                    "Score": song_data[level_name],
+                                                    "Flag": "APP" if song_data[level_name] >= 1010000 else "NONE",
+                                                    "IsCleared": True
+                                                } for level_name in song_data
+                                            }
+                                        } for song_id, song_data in followee_data["songScores"].items()
+                                    }
+                                },
+                                "profile": {
+                                    "DisplayName": followee_data["playerDisplayName"]
+                                },
+                                "badges": {
+                                    "EquippedBadgeId": followee_data["playerAvatar"]
+                                },
+                                "collectable-background": {
+                                    "EquippedBackgroundId": followee_data["playerBackground"]
+                                },
+                                "collectable-character": {
+                                    "EquippedCharacterId": followee_data["playerCharacter"]
+                                },
+                                "playRecords": {
+                                    "TotalPlayCount": 0,
+                                    "PlayCountI": 0,
+                                    "PlayCountIi": 0,
+                                    "PlayCountIii": 0,
+                                    "PlayCountIv": 0,
+                                    "TotalFc": 0,
+                                    "TotalAp": 0,
+                                    "TotalApp": 0,
+                                    "TotalEx": 0,
+                                    "TotalExPlus": 0,
+                                    "Tap": 0,
+                                    "Slide": 0,
+                                    "Flick": 0,
+                                    "Catch": 0,
+                                    "Rotate": 0,
+                                    "Early": 0,
+                                    "Late": 0,
+                                    "Good": 0,
+                                    "Miss": 0,
+                                    "Perfect": 0,
+                                    "PerfectPlus": 0
+                                },
+                                "PlayerLevel": {
+                                    "AccumXp": calculate_xp(followee_data["playerLevel"])
+                                }
+                            }
+                        },
+                        "TotalPlayTime": "0:0:0"
+                    }
+                }
+            ]
+        }
+        
+        return followee_data_cloud_save_raw_data_format
+    
+    def followee_data_to_user_data_raw_data_format(self, short_id: str = None, followee_data: dict = None) -> dict:
+        if followee_data is None:
+            followee_data = self.get_followee_data(short_id=short_id)
+        
+        followee_data_user_data_raw_data_format = {
+            "sessionToken": "",
+            "updatedAt": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            "loginRecord": {},
+            "privateSocialData": {
+                "FriendCap": 1 if followee_data["isFriend"] else 0,
+                "UserData": {
+                    "BadgeId": followee_data["playerAvatar"],
+                    "BackgroundId": followee_data["playerBackground"],
+                    "CharacterId": followee_data["playerCharacter"],
+                    "Rating": followee_data["playerRating"],
+                    "ShowRating": True,
+                    "Exp": calculate_xp(followee_data["playerLevel"]),
+                    "DisplayName": followee_data["playerDisplayName"],
+                    "SongRecords": {
+                        songID: {
+                            "Levels": {
+                                levelName: {
+                                    "Score": songData[levelName],
+                                    "Flag": "APP" if songData[levelName] >= 1010000 else "NONE",
+                                    "IsCleared": True
+                                } for levelName in songData
+                            }
+                        } for songID, songData in followee_data["songScores"].items()
+                    }
+                }
+            },
+            "objectId": "",
+            "username": "",
+            "shortId": followee_data["shortID"],
+            "createdAt": "1970-01-01T00:0:01.000Z",
+            "emailVerified": False,
+            "banReason": "",
+            "mirrorGemAmount": 0,
+            "mirrorInventoryItemSids": [],
+            "mirrorFreeGemAmount": 0,
+            "mirrorPaidGemAmount": 0,
+            "authData": {"xdg": {"detail": {"userId": ""}, "id": "", "access_token": ""}},
+            "banUntilTime": {},
+            "mobilePhoneVerified": False
+        }
+        
+        return followee_data_user_data_raw_data_format
+    
+    def follow_user(self, short_id: str) -> dict:
+        followee_data_raw_data_format = {
             "result": {
-                "socialDatas": [super().follow_user()]
+                "socialDatas": [super().follow_user(short_id=short_id)["result"]]
             }
         }
-        return self.get_follow_data(raw_data=raw_data)
+        return followee_data_raw_data_format
     
-    def unfollow_user(self) -> dict:
-        return super().unfollow_user()
+    def unfollow_user(self, short_id: str) -> dict:
+        return super().unfollow_user(short_id=short_id)

@@ -109,13 +109,10 @@ class PlayerSongData:
 class PlayerSongDataManager:
     def __init__(self, base_dir: str):
         self.base_dir = base_dir
-        self._cache = {}
 
     def get_song_data(self, song_id: str) -> PlayerSongData:
         db_file = os.path.join(self.base_dir, f"{song_id}.db")
-        if song_id not in self._cache:
-            self._cache[song_id] = PlayerSongData(db_file)
-        return self._cache[song_id]
+        return PlayerSongData(db_file)
 
 import os
 

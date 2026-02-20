@@ -15,7 +15,7 @@ ASSETS_DIR = os.path.join(CURRENT_DIR, "assets")
 SAVES_DIR = os.path.join(CURRENT_DIR, "saves")
 CLOUD_SAVES_DIR = os.path.join(SAVES_DIR, "cloud_saves")
 USER_DATAS_DIR = os.path.join(SAVES_DIR, "user_datas")
-FOLLOW_DATAS_DIR = os.path.join(SAVES_DIR, "follow_datas")
+FOLLOWEE_DATAS_DIR = os.path.join(SAVES_DIR, "followee_datas")
 
 LOCALES_DIR = os.path.join(ASSETS_DIR, "i18n")
 LOCALES = {}
@@ -26,10 +26,15 @@ for locale_file in os.listdir(LOCALES_DIR):
 def t(locale="zh-CN"):
     return LOCALES.get(str(locale), LOCALES.get("zh-CN", {}))
 
-def get_best40(user_profile: dict, just_data: bool = False, just_html: bool = False) -> str | dict:
+def get_api_processor(user_profile: dict) -> api.processor.Processor:
     if user_profile["serverCode"] == "cn": region = api.model.ServerRegion.CN
     elif user_profile["serverCode"] == "global": region = api.model.ServerRegion.GLOBAL
-    user_data = api.processor.Processor(region=region, user_profile=user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
+    elif user_profile["serverCode"] == "friend_cn": region = api.model.ServerRegion.FRIEND_CN
+    elif user_profile["serverCode"] == "friend_global": region = api.model.ServerRegion.FRIEND_GLOBAL
+    return api.processor.Processor(region=region, user_profile=user_profile)
+
+def get_best40(user_profile: dict, just_data: bool = False, just_html: bool = False) -> str | dict:
+    user_data = get_api_processor(user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
     user_data["songDatas"] = sorted(user_data["songDatas"], key=lambda x: x["ratingMix"], reverse=True)[:40]
     
     if just_data: return user_data["songDatas"]
@@ -45,10 +50,8 @@ def get_best40(user_profile: dict, just_data: bool = False, just_html: bool = Fa
     return utils.render_html_to_jpg(window_size=(1600, 1350), html=html)
 
 def get_song(user_profile: dict, song_id: str, just_data: bool = False, just_html: bool = False) -> str | dict:
-    if user_profile["serverCode"] == "cn": region = api.model.ServerRegion.CN
-    elif user_profile["serverCode"] == "global": region = api.model.ServerRegion.GLOBAL
-    user_data = api.processor.Processor(region=region, user_profile=user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
-    song_artist = database.song_data.song_data.get_song(id=song_id)["artist"]
+    user_data = get_api_processor(user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
+    song_artist = database.song_data.song_data.get_song(id=song_id).get("artist", "Unknown Artist")
     song_data = {}
     for song_level_data in user_data["songDatas"]:
         if song_level_data["id"] == song_id:
@@ -70,9 +73,7 @@ def get_song(user_profile: dict, song_id: str, just_data: bool = False, just_htm
     return utils.render_html_to_jpg(window_size=(1360, 900), html=html)
 
 def get_song_status(user_profile: dict, song_status: str, just_data: bool = False, just_html: bool = False) -> str | dict:
-    if user_profile["serverCode"] == "cn": region = api.model.ServerRegion.CN
-    elif user_profile["serverCode"] == "global": region = api.model.ServerRegion.GLOBAL
-    user_data = api.processor.Processor(region=region, user_profile=user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
+    user_data = get_api_processor(user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
     
     song_datas = []
     for song_data in user_data["songDatas"]:
@@ -97,9 +98,7 @@ def get_song_status(user_profile: dict, song_status: str, just_data: bool = Fals
     return utils.render_html_to_jpg(window_size=(1600, 1310), html=html)
 
 def get_song_rtr(user_profile: dict, song_level_num_range: tuple = (12.5, 1145), song_sort_type: str = "rating", just_data: bool = False, just_html: bool = False) -> str | dict:
-    if user_profile["serverCode"] == "cn": region = api.model.ServerRegion.CN
-    elif user_profile["serverCode"] == "global": region = api.model.ServerRegion.GLOBAL
-    user_data = api.processor.Processor(region=region, user_profile=user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
+    user_data = get_api_processor(user_profile).get_cloud_save(save_path=os.path.join(CLOUD_SAVES_DIR, f"{user_profile.get('objectID', 'EMPTY')}-{time.time()}.msgpack"), add_to_database=True)
     
     song_datas = []
     for song_data in user_data["songDatas"]:

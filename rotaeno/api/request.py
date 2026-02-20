@@ -1,5 +1,6 @@
 import time
 import json
+import random
 import hashlib
 import requests
 from .model import *
@@ -16,6 +17,18 @@ class BaseAPI:
         elif region == ServerRegion.GLOBAL:
             self.base_url = ServerURL.GLOBAL
             self.secret = ServerSecret.GLOBAL
+        elif region == ServerRegion.FRIEND_CN:
+            self.base_url = ServerURL.CN
+            self.secret = ServerSecret.CN
+            self.friend_account = random.choice(FriendAccount.CN)
+            self.user_profile["objectID"] = self.friend_account["objectID"]
+            self.user_profile["sessionToken"] = self.friend_account["sessionToken"]
+        elif region == ServerRegion.FRIEND_GLOBAL:
+            self.base_url = ServerURL.GLOBAL
+            self.secret = ServerSecret.GLOBAL
+            self.friend_account = random.choice(FriendAccount.GLOBAL)
+            self.user_profile["objectID"] = self.friend_account["objectID"]
+            self.user_profile["sessionToken"] = self.friend_account["sessionToken"]
         else:
             raise ValueError("Invalid region")
 
@@ -75,11 +88,11 @@ class UserAPI(BaseAPI):
     def get_user_data(self) -> dict:
         return self.get(f"/1.1/users/me")
 
-    def get_follow_data(self) -> dict:
-        return self.get("/1.1/call/GetAllFolloweeSocialData", params={})
+    def get_followee_data(self) -> dict:
+        return self.post("/1.1/call/GetAllFolloweeSocialData", data={})
     
-    def follow_user(self, shortID: str) -> dict:
-        return self.post("/1.1/call/FollowPlayer", data={"ShortId": shortID.upper()})
+    def follow_user(self, short_id: str) -> dict:
+        return self.post("/1.1/call/FollowPlayer", data={"ShortId": short_id.lower()})
     
-    def unfollow_user(self, shortID: str) -> dict:
-        return self.post("/1.1/call/UnfollowPlayer", data={"ShortId": shortID.upper()})
+    def unfollow_user(self, short_id: str) -> dict:
+        return self.post("/1.1/call/UnfollowPlayer", data={"ShortId": short_id.lower()})
