@@ -1,48 +1,43 @@
 from . import api
+from . import utils
+from . import config
 from . import database
 
-import os
-import time
-import msgpack
+import json
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(CURRENT_DIR, "assets")
-SAVES_DIR = os.path.join(CURRENT_DIR, "saves")
-GAME_RECORDS_DIR = os.path.join(SAVES_DIR, "game_records")
-USER_DATAS_DIR = os.path.join(SAVES_DIR, "user_datas")
-SUMMARIES_DIR = os.path.join(SAVES_DIR, "summaries")
-USERS_DIR = os.path.join(SAVES_DIR, "users")
-SAVES_DIR = os.path.join(SAVES_DIR, "saves")
+def get_api_processor(user_profile: dict) -> api.processor.Processor:
+    return api.processor.Processor(user_profile=user_profile)
 
-def read_file_to_data(save_path: str, hex: bool = False) -> None:
-    if hex:
-        if not save_path.endswith(".hex"):
-            save_path += ".hex"
-        with open(save_path, "rb") as f:
-            return f.read()
-    if not save_path.endswith(".msgpack"):
-        save_path += ".msgpack"
-    with open(save_path, "rb") as f:
-        return msgpack.load(f)
-
-def get_best30(user_profile: dict, just_data: bool = False) -> dict:
-    if user_profile["serverCode"] == "cn": region = api.model.ServerRegion.CN
-    elif user_profile["serverCode"] == "global": region = api.model.ServerRegion.GLOBAL
-    processor = api.processor.Processor(region=region, user_profile=user_profile)
-    save_save_path = os.path.join(SAVES_DIR, f"{user_profile.get('sessionToken', 'EMPTY')}-{time.time()}.hex")
-    user_data = processor.get_user_profile(save_user_data_path=os.path.join(USER_DATAS_DIR, f"{user_profile.get('sessionToken', 'EMPTY')}-{time.time()}.msgpack"),
-                                           save_summary_path=os.path.join(SUMMARIES_DIR, f"{user_profile.get('sessionToken', 'EMPTY')}-{time.time()}.msgpack"),
-                                           save_save_path=save_save_path,
-                                           save_save_user_path=os.path.join(USERS_DIR, f"{user_profile.get('sessionToken', 'EMPTY')}-{time.time()}.hex"))
-    song_datas = processor.get_game_record(raw_save_data=read_file_to_data(save_save_path, hex=True), save_path=os.path.join(GAME_RECORDS_DIR, f"{user_profile.get('sessionToken', 'EMPTY')}-{time.time()}.hex"))
-    song_datas = sorted(song_datas, key=lambda x: x["rating"], reverse=True)[:30]
+def best30(user_profile: dict, just_data: bool = False, just_html: bool = False) -> str | dict:
+    processor = get_api_processor(user_profile)
+    
+    latest_summary = processor.get_latest_summary(update=user_profile.get("update", False))
+    
+    song_datas = processor.get_game_record(summary=latest_summary, update=user_profile.get("update", False))
+    song_datas.sort(key=lambda x: x["rating"], reverse=True)
+    
+    ap_song_datas = [song_data for song_data in song_datas if song_data["status"] == "AP"]
+    ap_song_datas.sort(key=lambda x: x["rating"], reverse=True)
+    
+    best30_song_datas = ap_song_datas[:3]
+    for song_data in song_datas:
+        if len(best30_song_datas) - len(ap_song_datas[:3]) >= 27: break
+        if song_data not in best30_song_datas:
+            best30_song_datas.append(song_data)
+    
+    user_info = processor.get_user_info(summary=latest_summary, update=user_profile.get("update", False))
     
     result = {
-        "userData": user_data,
-        "songDatas": song_datas
+        "user_info": user_info,
+        "song_data": best30_song_datas
     }
     
-    if just_data:
-        return result
-
-    return result
+    if just_data: return result
+    
+    with open(config.HTML_ASSETS_DIR / "best30.html", "r", encoding="utf-8") as f:
+        html_template = f.read()
+    html = html_template.replace("/{{{data}}}/", json.dumps(result, ensure_ascii=False, indent=4))
+    
+    if just_html: return html
+    
+    return utils.render_html_to_jpg(window_size=(1100, 1350), html=html)

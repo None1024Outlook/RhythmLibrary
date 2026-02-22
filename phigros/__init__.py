@@ -1,9 +1,9 @@
 from . import api
-from . import database
+from . import config
 from . import processor
 
 __all__ = [
     "api",
-    "database",
+    "config",
     "processor"
 ]

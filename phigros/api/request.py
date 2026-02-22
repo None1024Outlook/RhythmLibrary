@@ -1,19 +1,25 @@
-import time
-import json
-import hashlib
+import curlify
 import requests
 from .model import *
 
+_original_send = requests.Session.send
+def sendWithCURL(self, request, **kwargs):
+    print("[CURL]", curlify.to_curl(request))
+    return _original_send(self, request, **kwargs)
+requests.Session.send = sendWithCURL
+
 class BaseAPI:
-    def __init__(self, region: ServerRegion, user_profile: dict, proxies: dict = None) -> None:
-        self.region = region
+    def __init__(self, user_profile: dict, proxies: dict = None) -> None:
+        self.region = ServerRegion(user_profile.get("server", None))
         self.user_profile = user_profile
         self.proxies = proxies
+        
+        self.requests = requests.Session()
 
-        if region == ServerRegion.CN:
+        if self.region == ServerRegion.CN:
             self.base_url = ServerURL.CN
             self.secret = ServerSecret.CN
-        elif region == ServerRegion.GLOBAL:
+        elif self.region == ServerRegion.GLOBAL:
             self.base_url = ServerURL.GLOBAL
             self.secret = ServerSecret.GLOBAL
         else:
@@ -28,7 +34,7 @@ class BaseAPI:
         }
 
     def get(self, endpoint: str, params: dict = None) -> dict:
-        return requests.get(
+        return self.requests.get(
             f"{self.base_url}/{endpoint}",
             headers=self._build_headers(),
             params=params,
@@ -36,7 +42,7 @@ class BaseAPI:
         ).json()
 
     def post(self, endpoint: str, data: dict = None) -> dict:
-        return requests.post(
+        return self.requests.post(
             f"{self.base_url}/{endpoint}",
             headers=self._build_headers(),
             json=data,
@@ -44,7 +50,7 @@ class BaseAPI:
         ).json()
 
     def put(self, endpoint: str, data: dict = None) -> dict:
-        return requests.put(
+        return self.requests.put(
             f"{self.base_url}/{endpoint}",
             headers=self._build_headers(),
             json=data,
